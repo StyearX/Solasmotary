@@ -1,0 +1,257 @@
+local Players=game:GetService("Players")
+local UserInputService=game:GetService("UserInputService")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local RunService=game:GetService("RunService")
+
+local player=Players.LocalPlayer
+local guiPlayer=player:WaitForChild("PlayerGui")
+
+-- getgenv
+_G.GuiPosition=_G.GuiPosition or {}
+_G.GuiLock=_G.GuiLock or {}
+_G.EmoteNumber=_G.EmoteNumber or 1
+
+local function fire(a,b)
+	player.PlayerScripts.Events.KeybindUsed:Fire(a,b)
+end
+
+for _,v in pairs({"CrouchGui","EmoteGui","LeaderboardGui","ColaGui","EmoteNumGui"}) do
+	if guiPlayer:FindFirstChild(v) then
+		guiPlayer[v]:Destroy()
+	end
+end
+
+local function addScale(gui)
+	local s=Instance.new("UIScale")
+	local cam=workspace.CurrentCamera
+	local function update()
+		s.Scale=math.clamp(cam.ViewportSize.Y/720,0.85,1.35)
+	end
+	update()
+	cam:GetPropertyChangedSignal("ViewportSize"):Connect(update)
+	s.Parent=gui
+end
+
+local function holdSystem(button,callback,name)
+	local HoldTime=5
+	local locked=_G.GuiLock[name] or false
+	local holding=false
+	local holdStart=0
+	local holdTriggered=false
+
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
+		holding=true
+		holdStart=tick()
+		holdTriggered=false
+		callback()
+	end)
+
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
+		holding=false
+	end)
+
+	RunService.RenderStepped:Connect(function()
+		if holding and not holdTriggered then
+			if tick()-holdStart>=HoldTime then
+				holdTriggered=true
+				locked=not locked
+				_G.GuiLock[name]=locked
+			end
+		end
+	end)
+
+	return function()
+		return locked
+	end
+end
+
+local function drag(button,isLocked,name)
+	local dragging=false
+	local dragInput
+	local dragStart
+	local startPos
+
+	if _G.GuiPosition[name] then
+		button.Position=_G.GuiPosition[name]
+	end
+
+	button.InputBegan:Connect(function(input)
+		if isLocked and isLocked() then return end
+		if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+			dragging=true
+			dragInput=input
+			dragStart=input.Position
+			startPos=button.Position
+		end
+	end)
+
+	button.InputChanged:Connect(function(input)
+		if input==dragInput and dragging then
+			local delta=input.Position-dragStart
+			button.Position=UDim2.new(startPos.X.Scale,startPos.X.Offset+delta.X,startPos.Y.Scale,startPos.Y.Offset+delta.Y)
+			_G.GuiPosition[name]=button.Position
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input==dragInput then
+			dragging=false
+			dragInput=nil
+		end
+	end)
+end
+
+-- crouch
+local crouchGui=Instance.new("ScreenGui")
+crouchGui.Name="CrouchGui"
+crouchGui.ResetOnSpawn=false
+crouchGui.Parent=guiPlayer
+addScale(crouchGui)
+
+local crouchBtn=Instance.new("ImageButton",crouchGui)
+crouchBtn.BackgroundTransparency=1
+crouchBtn.Size=UDim2.new(0,80,0,80)
+crouchBtn.AnchorPoint=Vector2.new(0,0.5)
+crouchBtn.Position=UDim2.new(0,20,0.5,0)
+crouchBtn.Image="rbxassetid://16803802267"
+
+local crouchIcon=Instance.new("ImageLabel",crouchBtn)
+crouchIcon.BackgroundTransparency=1
+crouchIcon.Size=UDim2.new(0.6,0,0.6,0)
+crouchIcon.Position=UDim2.new(0.2,0,0.2,0)
+crouchIcon.Image="rbxassetid://10238983204"
+crouchIcon.ImageTransparency=0.6
+
+local crouchLock=holdSystem(crouchBtn,function()
+	local char=player.Character
+	if char then
+		fire("Crouch",not char:GetAttribute("Crouching"))
+	end
+end,"crouch")
+
+drag(crouchBtn,crouchLock,"crouch")
+
+-- emote
+local emoteGui=Instance.new("ScreenGui")
+emoteGui.Name="EmoteGui"
+emoteGui.ResetOnSpawn=false
+emoteGui.Parent=guiPlayer
+addScale(emoteGui)
+
+local emoteBtn=Instance.new("ImageButton",emoteGui)
+emoteBtn.BackgroundTransparency=1
+emoteBtn.Size=UDim2.new(0,80,0,80)
+emoteBtn.AnchorPoint=Vector2.new(1,0.5)
+emoteBtn.Position=UDim2.new(1,-20,0.5,0)
+emoteBtn.Image="rbxassetid://16803802267"
+
+local emoteIcon=Instance.new("TextLabel",emoteBtn)
+emoteIcon.BackgroundTransparency=1
+emoteIcon.Size=UDim2.new(1,0,1,0)
+emoteIcon.Text="☻"
+emoteIcon.TextScaled=true
+emoteIcon.TextTransparency=0.6
+emoteIcon.Font=Enum.Font.GothamBold
+emoteIcon.TextColor3=Color3.new(1,1,1)
+
+local last=0
+local emoteLock=holdSystem(emoteBtn,function()
+	if tick()-last<0.35 then return end
+	last=tick()
+
+	pcall(function()
+		game.Workspace.Game.Players[player.Name].Equip:InvokeServer(2)
+	end)
+
+	pcall(function()
+		ReplicatedStorage.Events.Emote:FireServer(tostring(_G.EmoteNumber))
+	end)
+
+	local char=player.Character
+	if char then
+		fire("Crouch",not char:GetAttribute("Crouching"))
+	end
+end,"emote")
+
+drag(emoteBtn,emoteLock,"emote")
+
+-- leaderboard
+local lbGui=Instance.new("ScreenGui")
+lbGui.Name="LeaderboardGui"
+lbGui.ResetOnSpawn=false
+lbGui.Parent=guiPlayer
+addScale(lbGui)
+
+local lbBtn=Instance.new("ImageButton",lbGui)
+lbBtn.BackgroundTransparency=1
+lbBtn.Size=UDim2.new(0,80,0,80)
+lbBtn.AnchorPoint=Vector2.new(1,0)
+lbBtn.Position=UDim2.new(1,-20,0,20)
+lbBtn.Image="rbxassetid://16803802267"
+
+local lbIcon=Instance.new("ImageLabel",lbBtn)
+lbIcon.BackgroundTransparency=1
+lbIcon.Size=UDim2.new(0.6,0,0.6,0)
+lbIcon.Position=UDim2.new(0.2,0,0.2,0)
+lbIcon.Image="rbxassetid://101157449726701"
+lbIcon.ImageTransparency=0.6
+
+lbBtn.MouseButton1Click:Connect(function()
+	fire("Leaderboard",true)
+end)
+
+-- cola
+local colaGui=Instance.new("ScreenGui")
+colaGui.Name="ColaGui"
+colaGui.ResetOnSpawn=false
+colaGui.Parent=guiPlayer
+addScale(colaGui)
+
+local colaBtn=Instance.new("ImageButton",colaGui)
+colaBtn.BackgroundTransparency=1
+colaBtn.Size=UDim2.new(0,80,0,80)
+colaBtn.AnchorPoint=Vector2.new(1,0)
+colaBtn.Position=UDim2.new(1,-20,0,110)
+colaBtn.Image="rbxassetid://16803802267"
+
+local colaIcon=Instance.new("ImageLabel",colaBtn)
+colaIcon.BackgroundTransparency=1
+colaIcon.Size=UDim2.new(0.75,0,0.75,0)
+colaIcon.Position=UDim2.new(0.125,0,0.125,0)
+colaIcon.Image="rbxassetid://78550992367812"
+colaIcon.ImageTransparency=0.6
+
+colaBtn.MouseButton1Click:Connect(function()
+	ReplicatedStorage.Events.UseUsable:FireServer("Cola")
+end)
+
+-- emote number
+local numGui=Instance.new("ScreenGui")
+numGui.Name="EmoteNumGui"
+numGui.ResetOnSpawn=false
+numGui.Parent=guiPlayer
+addScale(numGui)
+
+local numBtn=Instance.new("ImageButton",numGui)
+numBtn.BackgroundTransparency=1
+numBtn.Size=UDim2.new(0,80,0,80)
+numBtn.Position=UDim2.new(0.5,-40,0,20)
+numBtn.Image="rbxassetid://16803802267"
+
+local numTxt=Instance.new("TextLabel",numBtn)
+numTxt.BackgroundTransparency=1
+numTxt.Size=UDim2.new(1,0,1,0)
+numTxt.TextScaled=true
+numTxt.TextTransparency=0.6
+numTxt.Font=Enum.Font.GothamBold
+numTxt.TextColor3=Color3.new(1,1,1)
+numTxt.Text=tostring(_G.EmoteNumber)
+
+numBtn.MouseButton1Click:Connect(function()
+	local n=_G.EmoteNumber+1
+	if n>6 then n=1 end
+	_G.EmoteNumber=n
+	numTxt.Text=tostring(n)
+end)
